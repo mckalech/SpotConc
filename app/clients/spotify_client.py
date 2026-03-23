@@ -1,0 +1,109 @@
+"""Low-level HTTP client for Spotify Web API."""
+
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from app.auth.token_manager import TokenManager
+from app.utils.logging import get_logger
+from app.utils.retry import http_retry
+
+logger = get_logger(__name__)
+
+SPOTIFY_API_BASE = "https://api.spotify.com/v1"
+
+
+class SpotifyClient:
+    """Thin wrapper around Spotify Web API with automatic auth and pagination."""
+
+    def __init__(self, token_manager: TokenManager):
+        self._token_manager = token_manager
+        self._client = httpx.Client(
+            base_url=SPOTIFY_API_BASE,
+            timeout=30.0,
+        )
+
+    def _headers(self) -> Dict[str, str]:
+        token = self._token_manager.get_access_token()
+        return {"Authorization": f"Bearer {token}"}
+
+    @http_retry
+    def _get(self, url: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Make an authenticated GET request with retry.
+
+        Args:
+            url: Full URL or path relative to base URL.
+            params: Optional query parameters.
+
+        Returns:
+            Parsed JSON response.
+        """
+        response = self._client.get(
+            url,
+            headers=self._headers(),
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _paginate(self, url: str, params: Optional[Dict[str, Any]] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch all pages from a paginated Spotify endpoint.
+
+        Args:
+            url: Initial endpoint URL.
+            params: Optional query parameters.
+            limit: Items per page (max 50).
+
+        Returns:
+            List of all items across all pages.
+        """
+        all_items = []
+        request_params = dict(params or {})
+        request_params["limit"] = limit
+        request_params.setdefault("offset", 0)
+
+        while True:
+            data = self._get(url, params=request_params)
+            items = data.get("items", [])
+            all_items.extend(items)
+
+            logger.info(
+                "Fetched %d items (total so far: %d)",
+                len(items),
+                len(all_items),
+            )
+
+            # Check if there are more pages
+            next_url = data.get("next")
+            if not next_url:
+                break
+
+            # Use the full next URL for subsequent requests
+            url = next_url
+            request_params = {}  # next URL already contains params
+
+        return all_items
+
+    def get_current_user_playlists(self) -> List[Dict[str, Any]]:
+        """Fetch all playlists for the current user."""
+        logger.info("Fetching user playlists...")
+        return self._paginate("/me/playlists")
+
+    def get_playlist_tracks(self, playlist_id: str) -> List[Dict[str, Any]]:
+        """Fetch all tracks from a specific playlist.
+
+        Args:
+            playlist_id: Spotify playlist ID.
+
+        Returns:
+            List of playlist track objects (each containing a 'track' field).
+        """
+        logger.info("Fetching tracks for playlist %s...", playlist_id)
+        return self._paginate(
+            f"/playlists/{playlist_id}/tracks",
+            params={"fields": "items(track(id,name,artists(id,name))),next,total"},
+        )
+
+    def close(self):
+        """Close the underlying HTTP client."""
+        self._client.close()
