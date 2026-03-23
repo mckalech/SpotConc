@@ -1,5 +1,6 @@
 """Low-level HTTP client for Spotify Web API."""
 
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -63,7 +64,18 @@ class SpotifyClient:
         request_params.setdefault("offset", 0)
 
         while True:
-            data = self._get(url, params=request_params)
+            try:
+                data = self._get(url, params=request_params)
+            except Exception as exc:
+                if all_items:
+                    logger.warning(
+                        "Pagination interrupted after %d items: %s. Returning partial results.",
+                        len(all_items),
+                        str(exc)[:200],
+                    )
+                    return all_items
+                raise
+
             items = data.get("items", [])
             all_items.extend(items)
 
@@ -78,9 +90,13 @@ class SpotifyClient:
             if not next_url:
                 break
 
+            # Small delay between pages to avoid rate limiting
+            time.sleep(0.1)
+
             # Use the full next URL for subsequent requests
+            # Keep limit param to avoid Spotify defaulting to 20
             url = next_url
-            request_params = {}  # next URL already contains params
+            request_params = {"limit": limit}
 
         return all_items
 
@@ -99,10 +115,16 @@ class SpotifyClient:
             List of playlist track objects (each containing a 'track' field).
         """
         logger.info("Fetching tracks for playlist %s...", playlist_id)
-        return self._paginate(
-            f"/playlists/{playlist_id}/tracks",
-            params={"fields": "items(track(id,name,artists(id,name))),next,total"},
-        )
+        return self._paginate(f"/playlists/{playlist_id}/tracks")
+
+    def get_saved_tracks(self) -> List[Dict[str, Any]]:
+        """Fetch all Liked Songs (saved tracks) for the current user.
+
+        Returns:
+            List of saved track objects (each containing a 'track' field).
+        """
+        logger.info("Fetching user's Liked Songs...")
+        return self._paginate("/me/tracks")
 
     def close(self):
         """Close the underlying HTTP client."""

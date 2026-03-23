@@ -12,7 +12,7 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
-SCOPES = "playlist-read-private playlist-read-collaborative"
+SCOPES = "playlist-read-private playlist-read-collaborative user-library-read"
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):

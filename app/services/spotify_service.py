@@ -20,93 +20,64 @@ class SpotifyService:
         self._session = session
 
     def sync_all(self) -> Dict[str, int]:
-        """Run full Spotify sync: playlists -> tracks -> artists.
+        """Sync Liked Songs from Spotify: tracks -> artists -> DB.
 
         Returns:
             Stats dict with counts of synced entities.
         """
         stats = {
-            "playlists": 0,
             "tracks": 0,
             "artists": 0,
             "skipped_tracks": 0,
-            "skipped_playlists": 0,
         }
 
         try:
-            playlists = self._client.get_current_user_playlists()
+            raw_tracks = self._client.get_saved_tracks()
         except Exception as exc:
-            logger.error("Failed to fetch playlists: %s", exc)
+            logger.error("Failed to fetch Liked Songs: %s", exc)
             return stats
 
-        logger.info("Found %d playlists", len(playlists))
+        logger.info("Fetched %d Liked Songs items", len(raw_tracks))
 
-        for i, pl_data in enumerate(playlists, 1):
-            playlist_id = pl_data.get("id")
-            playlist_name = pl_data.get("name", "Unknown")
+        # Virtual playlist for Liked Songs
+        playlist = self._upsert_playlist("liked_songs", "Liked Songs")
 
-            if not playlist_id:
-                logger.warning("Skipping playlist with no ID: %s", playlist_name)
-                stats["skipped_playlists"] += 1
+        for i, track_item in enumerate(raw_tracks, 1):
+            track_data = track_item.get("track")
+
+            # Skip null / unavailable tracks
+            if not track_data or not track_data.get("id"):
+                stats["skipped_tracks"] += 1
                 continue
 
-            logger.info(
-                "Syncing playlist %d/%d: %s",
-                i,
-                len(playlists),
-                playlist_name,
-            )
+            track = self._upsert_track(track_data)
+            stats["tracks"] += 1
 
-            # Upsert playlist
-            playlist = self._upsert_playlist(playlist_id, playlist_name)
-            stats["playlists"] += 1
+            self._link_playlist_track(playlist, track)
 
-            # Fetch and process tracks
-            try:
-                raw_tracks = self._client.get_playlist_tracks(playlist_id)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to fetch tracks for playlist %s (%s): %s",
-                    playlist_name,
-                    playlist_id,
-                    exc,
-                )
-                stats["skipped_playlists"] += 1
-                continue
-
-            for track_item in raw_tracks:
-                track_data = track_item.get("track")
-
-                # Skip null / unavailable tracks
-                if not track_data or not track_data.get("id"):
-                    stats["skipped_tracks"] += 1
+            # Process artists on this track
+            for artist_data in track_data.get("artists", []):
+                if not artist_data.get("id"):
                     continue
+                artist = self._upsert_artist(artist_data)
+                stats["artists"] += 1
+                self._link_track_artist(track, artist)
 
-                track = self._upsert_track(track_data)
-                stats["tracks"] += 1
+            # Commit every 200 tracks to avoid huge transactions
+            if i % 200 == 0:
+                self._session.commit()
+                logger.info("Progress: %d/%d tracks processed", i, len(raw_tracks))
 
-                # Link track to playlist
-                self._link_playlist_track(playlist, track)
+        self._session.commit()
 
-                # Process artists on this track
-                for artist_data in track_data.get("artists", []):
-                    if not artist_data.get("id"):
-                        continue
-                    artist = self._upsert_artist(artist_data)
-                    stats["artists"] += 1
-                    self._link_track_artist(track, artist)
-
-            # Commit after each playlist to avoid huge transactions
-            self._session.commit()
+        # Count unique artists
+        unique_artists = self._session.query(Artist).count()
 
         logger.info(
-            "Sync complete: %d playlists, %d tracks, %d artists "
-            "(skipped %d tracks, %d playlists)",
-            stats["playlists"],
+            "Sync complete: %d tracks, %d unique artists (skipped %d tracks)",
             stats["tracks"],
-            stats["artists"],
+            unique_artists,
             stats["skipped_tracks"],
-            stats["skipped_playlists"],
         )
         return stats
 

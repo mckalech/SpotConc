@@ -48,7 +48,7 @@ def _validate_date(value: str) -> str:
 
 @app.command()
 def sync_spotify():
-    """Fetch playlists, tracks and artists from Spotify."""
+    """Fetch Liked Songs, tracks and artists from Spotify."""
     token_manager = TokenManager()
     _ensure_spotify_auth(token_manager)
 
@@ -61,11 +61,9 @@ def sync_spotify():
 
         typer.echo(
             f"\nSync complete:\n"
-            f"  Playlists: {stats['playlists']}\n"
             f"  Tracks:    {stats['tracks']}\n"
             f"  Artists:   {stats['artists']}\n"
-            f"  Skipped:   {stats['skipped_tracks']} tracks, "
-            f"{stats['skipped_playlists']} playlists"
+            f"  Skipped:   {stats['skipped_tracks']} tracks"
         )
     finally:
         session.close()
@@ -171,7 +169,7 @@ def run(
         spotify_service = SpotifyService(spotify_client, session)
         sync_stats = spotify_service.sync_all()
         typer.echo(
-            f"  -> {sync_stats['playlists']} playlists, "
+            f"  -> {sync_stats['tracks']} tracks, "
             f"{sync_stats['artists']} artists"
         )
 
