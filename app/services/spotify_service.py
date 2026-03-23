@@ -19,8 +19,11 @@ class SpotifyService:
         self._client = client
         self._session = session
 
-    def sync_all(self) -> Dict[str, int]:
+    def sync_all(self, max_tracks: int = 0) -> Dict[str, int]:
         """Sync Liked Songs from Spotify: tracks -> artists -> DB.
+
+        Args:
+            max_tracks: Maximum number of tracks to fetch. 0 = all.
 
         Returns:
             Stats dict with counts of synced entities.
@@ -32,7 +35,7 @@ class SpotifyService:
         }
 
         try:
-            raw_tracks = self._client.get_saved_tracks()
+            raw_tracks = self._client.get_saved_tracks(max_items=max_tracks)
         except Exception as exc:
             logger.error("Failed to fetch Liked Songs: %s", exc)
             return stats

@@ -47,7 +47,9 @@ def _validate_date(value: str) -> str:
 
 
 @app.command()
-def sync_spotify():
+def sync_spotify(
+    limit: int = typer.Option(0, "--limit", "-n", help="Max tracks to fetch (0 = all)"),
+):
     """Fetch Liked Songs, tracks and artists from Spotify."""
     token_manager = TokenManager()
     _ensure_spotify_auth(token_manager)
@@ -57,7 +59,7 @@ def sync_spotify():
 
     try:
         service = SpotifyService(client, session)
-        stats = service.sync_all()
+        stats = service.sync_all(max_tracks=limit)
 
         typer.echo(
             f"\nSync complete:\n"
@@ -148,6 +150,7 @@ def run(
     date_from: str = typer.Option(..., "--date-from", help="Start date (YYYY-MM-DD)"),
     date_to: str = typer.Option(..., "--date-to", help="End date (YYYY-MM-DD)"),
     country: str = typer.Option("GB", "--country", help="Country code (default: GB)"),
+    limit: int = typer.Option(0, "--limit", "-n", help="Max tracks to fetch (0 = all)"),
     include_review: bool = typer.Option(
         False, "--include-review", help="Include REVIEW events in report"
     ),
@@ -167,7 +170,7 @@ def run(
         # Step 1: Sync Spotify
         typer.echo("Step 1/4: Syncing Spotify data...")
         spotify_service = SpotifyService(spotify_client, session)
-        sync_stats = spotify_service.sync_all()
+        sync_stats = spotify_service.sync_all(max_tracks=limit)
         typer.echo(
             f"  -> {sync_stats['tracks']} tracks, "
             f"{sync_stats['artists']} artists"

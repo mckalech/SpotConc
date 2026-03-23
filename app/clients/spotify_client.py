@@ -47,13 +47,20 @@ class SpotifyClient:
         response.raise_for_status()
         return response.json()
 
-    def _paginate(self, url: str, params: Optional[Dict[str, Any]] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def _paginate(
+        self,
+        url: str,
+        params: Optional[Dict[str, Any]] = None,
+        limit: int = 50,
+        max_items: int = 0,
+    ) -> List[Dict[str, Any]]:
         """Fetch all pages from a paginated Spotify endpoint.
 
         Args:
             url: Initial endpoint URL.
             params: Optional query parameters.
             limit: Items per page (max 50).
+            max_items: Stop after collecting this many items. 0 = no limit.
 
         Returns:
             List of all items across all pages.
@@ -84,6 +91,11 @@ class SpotifyClient:
                 len(items),
                 len(all_items),
             )
+
+            # Stop if we've reached the requested limit
+            if max_items > 0 and len(all_items) >= max_items:
+                all_items = all_items[:max_items]
+                break
 
             # Check if there are more pages
             next_url = data.get("next")
@@ -117,14 +129,20 @@ class SpotifyClient:
         logger.info("Fetching tracks for playlist %s...", playlist_id)
         return self._paginate(f"/playlists/{playlist_id}/tracks")
 
-    def get_saved_tracks(self) -> List[Dict[str, Any]]:
-        """Fetch all Liked Songs (saved tracks) for the current user.
+    def get_saved_tracks(self, max_items: int = 0) -> List[Dict[str, Any]]:
+        """Fetch Liked Songs (saved tracks) for the current user.
+
+        Args:
+            max_items: Maximum number of tracks to fetch. 0 = all.
 
         Returns:
             List of saved track objects (each containing a 'track' field).
         """
-        logger.info("Fetching user's Liked Songs...")
-        return self._paginate("/me/tracks")
+        if max_items > 0:
+            logger.info("Fetching up to %d Liked Songs...", max_items)
+        else:
+            logger.info("Fetching all Liked Songs...")
+        return self._paginate("/me/tracks", max_items=max_items)
 
     def close(self):
         """Close the underlying HTTP client."""
