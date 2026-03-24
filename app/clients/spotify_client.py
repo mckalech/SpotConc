@@ -105,10 +105,9 @@ class SpotifyClient:
             # Small delay between pages to avoid rate limiting
             time.sleep(0.1)
 
-            # Use the full next URL for subsequent requests
-            # Keep limit param to avoid Spotify defaulting to 20
+            # next URL already contains all params (offset, limit)
             url = next_url
-            request_params = {"limit": limit}
+            request_params = {}
 
         return all_items
 
