@@ -2,6 +2,7 @@
 
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -105,9 +106,14 @@ class SpotifyClient:
             # Small delay between pages to avoid rate limiting
             time.sleep(0.1)
 
-            # next URL already contains all params (offset, limit)
-            url = next_url
-            request_params = {}
+            # Extract path and params from next URL
+            # (httpx base_url drops params from absolute URLs, so we parse manually)
+            parsed = urlparse(next_url)
+            url = parsed.path  # e.g. "/v1/me/tracks"
+            # Strip the /v1 prefix since base_url already includes it
+            if url.startswith("/v1"):
+                url = url[3:]
+            request_params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
 
         return all_items
 
